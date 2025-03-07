@@ -1,80 +1,62 @@
-#Codigo final
-from machine import Pin, ADC, PWM
+from machine import Pin, ADC, I2C
 import machine
 import time
 import neopixel
 
-sensor_humo = ADC(Pin(34))  # Pin analógico para el sensor de humo MQ-2
-sensor_humo.atten(ADC.ATTN_11DB)  # Rango de 0 a 3.3V
+# Configuración del sensor MQ-2
+detector_gas = ADC(Pin(13))
+detector_gas.atten(ADC.ATTN_11DB)  # Ajuste para 3.3V
 
-sensor_temp = ADC(Pin(35))  # Pin analógico para el sensor de temperatura (termistor)
-sensor_temp.atten(ADC.ATTN_11DB)
+# Sensor de llama
+sensor_llama = Pin(10, Pin.IN)
 
-sensor_llama = Pin(7, Pin.IN)  # Sensor de llama (entrada digital)
+# LM75A - Sensor de temperatura I2C
+I2C_SCL = Pin(6)
+I2C_SDA = Pin(11)
+i2c = I2C(0, scl=I2C_SCL, sda=I2C_SDA, freq=100000)
+LM75A_ADDR = 0x4F
 
-# Configurar actuadores (salida de información)
-buzzer = PWM(Pin(3), freq=1000, duty_u16=0)  # Buzzer con PWM
-PIN_LEDS = 5
+# Buzzer
+buzzer = Pin(9, Pin.OUT)
+
+# LEDs Neopixel
 NUM_LEDS = 12
-np = neopixel.NeoPixel(Pin(PIN_LEDS), NUM_LEDS)
+np = neopixel.NeoPixel(Pin(2), NUM_LEDS)
 
-# Umbrales de detección (ajustar según pruebas)
-UMBRAL_HUMO = 1000  # Valor del ADC para indicar alta presencia de humo
-UMBRAL_TEMP = 2000  # Valor del ADC para indicar temperatura alta
-UMBRAL_LLAMA = 0  # En la mayoría de los sensores de llama, 0 indica detección
+def leer_temperatura():
+    temp_data = i2c.readfrom_mem(LM75A_ADDR, 0x00, 2)
+    temp = (temp_data[0] << 8 | temp_data[1]) >> 7
+    return temp * 0.5
 
-def leer_sensor(sensor):
-    """Lee un sensor analógico y devuelve un valor entre 0 y 4095"""
-    return sensor.read()
+def leer_gas():
+    return detector_gas.read()
 
-def detectar_incendio():
-    """Verifica si hay condiciones de incendio"""
-    humo = leer_sensor(sensor_humo)
-    temp = leer_sensor(sensor_temp)
-    llama = sensor_llama.value()
-
-    print(f"Humo: {humo}, Temperatura: {temp}, Llama: {llama}")
-
-    if humo > UMBRAL_HUMO or temp > UMBRAL_TEMP or llama == UMBRAL_LLAMA:
-        return True  # Se detecta incendio
-    return False  # No hay incendio
-
-def encender_leds():
-    """Enciende los LEDs en color rojo"""
+def encender_leds(color):
     for i in range(NUM_LEDS):
-        np[i] = (255, 0, 0)  # Rojo (R, G, B)
+        np[i] = color
     np.write()
 
 def apagar_leds():
-    """Apaga todos los LEDs"""
-    for i in range(NUM_LEDS):
-        np[i] = (0, 0, 0)
-    np.write()
+    encender_leds((0, 0, 0))
 
-def activar_buzzer():
-    """Activa el buzzer con un sonido intermitente"""
-    for _ in range(5):
-        buzzer.duty_u16(30000)  # Sonido fuerte
-        time.sleep(0.2)
-        buzzer.duty_u16(0)  # Silencio
-        time.sleep(0.2)
+def alerta_incendio():
+    encender_leds((255, 0, 0))
+    buzzer.value(1)
+    time.sleep(0.5)
+    buzzer.value(0)
 
-def activar_alarma():
-    """Activa LED y buzzer en caso de incendio"""
-    encender_leds()
-    activar_buzzer()
-
-def desactivar_alarma():
-    """Apaga LED y buzzer"""
-    apagar_leds()
-    buzzer.duty_u16(0)
-
-# Loop principal
 while True:
-    if detectar_incendio():
-        print("¡Incendio detectado!")
-        activar_alarma()
-    else:
-        desactivar_alarma()
+    gas = leer_gas()
+    llama = sensor_llama.value()
+    temperatura = leer_temperatura()
 
-    time.sleep(1)  # Esperar antes de la siguiente lectura
+    print(f"Gas: {gas}, Llama: {llama}, Temp: {temperatura:.2f}°C")
+
+    if gas > 2000 or llama == 0 or temperatura > 50:
+        alerta_incendio()
+    elif gas > 1500 or temperatura > 40:
+        encender_leds((255, 165, 0))  # Naranja para advertencia
+    else:
+        encender_leds((0, 255, 0))  # Verde para seguro
+
+    time.sleep(0.5)

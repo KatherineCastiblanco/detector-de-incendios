@@ -1,22 +1,10 @@
-#Prueba unitaria sensor de temperatura
-from machine import Pin, ADC
-import time
+from machine import I2C, Pin
+i2c = I2C(0, scl=Pin(6), sda=Pin(11), freq=100000)
+devices = i2c.scan()
 
-sensor_temp = ADC(Pin(10))  # Sensor de temperatura (ejemplo: termistor)
-sensor_temp.atten(ADC.ATTN_11DB)  # Medir hasta 3.3V
-
-# Umbral para detección de temperatura alta (ajustar según sensor)
-UMBRAL_TEMP = 3000  
-
-def leer_sensor(sensor):
-    """Lee un sensor analógico y devuelve un valor entre 0 y 4095"""
-    return sensor.read()
-
-while True:
-    temp = leer_sensor(sensor_temp)
-    print(f"Temperatura: {temp}")
-
-    if temp > UMBRAL_TEMP:
-        print("¡Temperatura alta detectada!")
-
-    time.sleep(0.25)  # Esperar un cuarto de segundo antes de la siguiente lectura
+if devices:
+    print("Direcciones I2C detectadas:")
+    for device in devices:
+        print(f"0x{device:02X}")
+else:
+    print("No se encontraron dispositivos I2C")
